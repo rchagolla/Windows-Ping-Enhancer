@@ -11,32 +11,53 @@ $sent = 0
 $received = 0
 $errors = 0
 
+# Track types of errors
+$errorTypes = @{
+    "Request timed out"            = 0
+    "Destination host unreachable" = 0
+    "General failure"              = 0
+}
+
 try {
     while ($true) {
-        $result = Test-Connection -ComputerName $TargetIP -Count 1 -ErrorAction SilentlyContinue
         $sent += 1
 
-        if ($result) {
-            # Windows default ICMP payload is 32 bytes
-            $bytes = 32 
+        # Use ping.exe for better error info
+        $output = ping.exe -n 1 $TargetIP
 
-            # Mimic Windows ping output
-            Write-Host "Reply from $($result.Address): bytes=$bytes time=$($result.ResponseTime)ms TTL=$($result.TimeToLive)"
+        if ($output -match "Reply from") {
             $received += 1
+
+            # Extract useful info (optional)
+            $match = $output | Select-String -Pattern "Reply from.*"
+            Write-Host $match
+        }
+        elseif ($output -match "Request timed out") {
+            $errorTypes["Request timed out"] += 1
+            $errors += 1
+            Write-Host "Request timed out."
+        }
+        elseif ($output -match "Destination host unreachable") {
+            $errorTypes["Destination host unreachable"] += 1
+            $errors += 1
+            Write-Host "Destination host unreachable."
+        }
+        elseif ($output -match "General failure") {
+            $errorTypes["General failure"] += 1
+            $errors += 1
+            Write-Host "General failure."
         }
         else {
-            # Capture failures
             $errors += 1
-            Write-Host "PING ERROR"
+            Write-Host "Unknown ping error."
         }
 
-        Start-Sleep -Seconds 1  # Wait 1 second before next ping
+        Start-Sleep -Seconds 1
     }
 }
 finally {
-    # Display all collected errors after stopping
     Write-Host "`nPing statistics for $($TargetIP):"
-    
-    $percentLost = [Math]::round(($received / $sent) * 100, 2)
-    Write-Host "`tPackets: Sent = $($sent), Received = $($received), Lost = $($errors.count) ($($percentLost)% loss)"
+    $percentLost = [math]::Round(($received / $sent) * 100, 2)
+
+    Write-Host "`tPackets: Sent = $sent, Received = $received, Lost = $errors ($percentLost% loss)"
 }
